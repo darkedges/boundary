@@ -57,21 +57,21 @@ To authenticate to Boundary using the recovery KMS workflow:
 <Tabs>
 <Tab heading="CLI">
 
-To use the recovery workflow on the CLI, you must pass the `-recovery-config` flag or set the environment
+To use the recovery workflow on the CLI, you must pass the `-recovery-config <path_to_kms_recovery_config>` flag or set the environment
 variable for `BOUNDARY_RECOVERY_CONFIG` for every command ran. Authentication takes place for every command
 ran when using the recovery workflow, there is no `boundary authenticate` step:
 
 ```bash
-$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
+$ cat << EOF > /tmp/recovery.hcl
 kms "aead" {
-	purpose   = "recovery"
-	aead_type = "aes-gcm"
-	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
-	key_id    = "global_recovery"
+        purpose   = "recovery"
+        aead_type = "aes-gcm"
+        key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+        key_id    = "global_recovery"
 }
-EOT
+EOF
 
-$ boundary users create ... 
+$ boundary users create <truncated> -recovery-config /tmp/recovery.hcl
 ...
 ```
 
@@ -139,21 +139,14 @@ for each scope. We're going to specify a role for managing these scopes by selec
 <Tab heading="CLI">
 
 ```bash
-$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
-kms "aead" {
-	purpose   = "recovery"
-	aead_type = "aes-gcm"
-	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
-	key_id    = "global_recovery"
-}
-EOT
-
 $ boundary scopes create -name 'org' -scope-id 'global' \
+  -recovery-config /tmp/recovery.hcl \
   -skip-admin-role-creation \
   -skip-default-role-creation
 <truncated>
 
 $ boundary scopes create -name 'project' -scope-id <org_scope_id_from_last_step> \
+  -recovery-config /tmp/recovery.hcl \
   -skip-admin-role-creation \
   -skip-default-role-creation
 <truncated>
@@ -194,16 +187,11 @@ Create an auth method in the organization scope.
 <Tab heading="CLI">
 
 ```bash
-$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
-kms "aead" {
-	purpose   = "recovery"
-	aead_type = "aes-gcm"
-	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
-	key_id    = "global_recovery"
-}
-EOT
-
-$ boundary auth-methods create password -scope-id <org_scope_id> -name 'my_method' -description 'My password auth method'
+$ boundary auth-methods create password \
+  -recovery-config /tmp/recovery.hcl \
+  -scope-id <org_scope_id> \
+  -name 'my_method' \
+  -description 'My password auth method'
 ```
 
 </Tab>
@@ -229,16 +217,8 @@ Create a login account for the auth method.
 <Tab heading="CLI">
 
 ```bash
-$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
-kms "aead" {
-	purpose   = "recovery"
-	aead_type = "aes-gcm"
-	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
-	key_id    = "global_recovery"
-}
-EOT
-
 $ boundary accounts create password \
+  -recovery-config /tmp/recovery.hcl \
   -login-name "myuser" \
   -password "foofoofoo" \
   -auth-method-id <auth_method_id_from_last_step"
@@ -270,16 +250,8 @@ This user will also be the principal in the role we create in the following step
 <Tab heading="CLI">
 
 ```bash
-$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
-kms "aead" {
-	purpose   = "recovery"
-	aead_type = "aes-gcm"
-	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
-	key_id    = "global_recovery"
-}
-EOT
-
 $ boundary users create -scope-id <org_scope_id> \
+  -recovery-config /tmp/recovery.hcl \
   -name "myuser" \
   -description "My user!"
 
@@ -320,18 +292,23 @@ Assumes recovery key export from above steps is still set:
 ```bash
 # Create global anonymous listing role
 $ boundary roles create -name 'global_anon_listing' \
+  -recovery-config /tmp/recovery.hcl \
   -scope-id 'global'
 
 $ boundary add-grants -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'id=*;type=auth-method;actions=list,authenticate'
 
 $ boundary add-grants -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'type=scope;actions=list'
 
 $ boundary add-grants -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'id=*;actions=read,change-password'
 
 $ boundary add-principals -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -principal 'u_anon' 
 ```
 
@@ -362,18 +339,23 @@ Assumes recovery key export from above steps is still set:
 
 ```bash
 $ boundary roles create -name 'global_anon_listing' \
+  -recovery-config /tmp/recovery.hcl \
   -scope-id <org_scope_id> 
 
 $ boundary add-grants -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'id=*;type=auth-method;actions=list,authenticate'
 
 $ boundary add-grants -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'type=scope;actions=list'
 
 $ boundary add-grants -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'id=*;actions=read,change-password'
 
 $ boundary add-principals -id <global_anon_listing_id> \
+  -recovery-config /tmp/recovery.hcl \
   -principal 'u_anon' 
 ```
 
@@ -404,13 +386,16 @@ Assumes recovery key export from above steps is still set:
 
 ```bash
 $ boundary roles create -name 'org_admin' \
+  -recovery-config /tmp/recovery.hcl \
   -scope-id 'global' \
   -grant-scope-id <org_scope_id>
 
 $ boundary add-grants -id <org_admin_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'id=*;type=*;actions=*'
 
 $ boundary add-principals -id <org_admin_id> \
+  -recovery-config /tmp/recovery.hcl \
   -principal <myuser_user_id> 
 ```
 
@@ -440,13 +425,16 @@ Assumes recovery key export from above steps is still set:
 
 ```bash
 $ boundary roles create -name 'project_admin' \
+  -recovery-config /tmp/recovery.hcl \
   -scope-id <org_scope_id> \
   -grant-scope-id <project_scope_id>
 
 $ boundary add-grants -id <project_admin_id> \
+  -recovery-config /tmp/recovery.hcl \
   -grant 'id=*;type=*;actions=*'
 
 $ boundary add-principals -id <project_admin_id> \
+  -recovery-config /tmp/recovery.hcl \
   -principal <myuser_user_id> 
 ```
 
