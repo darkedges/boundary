@@ -1,0 +1,484 @@
+---
+layout: docs
+page_title: Installing Boundary
+sidebar_title: Without Generated Resources 
+description: |-
+  How to install boundary without generated resources.
+---
+
+# Installing Boundary Without Generated Resources 
+
+Initializing Boundary without Generated resources for the first time can be a little confusing. How do you 
+create your first user and login to administer a Boundary deployment that has no authentication methods, 
+users, accounts, etc? This section describes how to get your freshly deployed Boundary installation off the 
+ground.
+
+## Recovery KMS Workflow
+
+Initializing Boundary without generated resources starts with your Boundary configuration file. Specifically,
+the controller configuration specifies three KMS blocks:
+
+```hcl
+<truncated>
+kms "aead" {
+	purpose   = "root"
+	aead_type = "aes-gcm"
+	key       = "sP1fnF5Xz85RrXyELHFeZg9Ad2qt4Z4bgNHVGtD6ung="
+	key_id    = "global_root"
+}
+
+kms "aead" {
+	purpose   = "worker-auth"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_worker-auth"
+}
+
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+<truncated>
+```
+
+In this example, we're using hardcoded AEAD keys, but in a real world non-dev deployment, you 
+should use your cloud provider's KMS such as [AWS KMS](https://www.boundaryproject.io/docs/configuration/kms/awskms) to manage the keys Boundary
+users to encrypted sensitive information.
+
+The KMS block we're focused on is the `recovery` block. This block specifies the key used to "recover" Boundary
+but you can also use it to authenticate to Boundary to manage it as a "global" super user. This allows
+you to authenticate from the CLI or from Terraform in order to manage Boundary without any generated 
+resources. 
+
+To authenticate to Boundary using the recovery KMS workflow:
+
+<Tabs>
+<Tab heading="CLI">
+
+To use the recovery workflow on the CLI, you must pass the `-recovery-config` flag or set the environment
+variable for `BOUNDARY_RECOVERY_CONFIG` for every command ran. Authentication takes place for every command
+ran when using the recovery workflow, there is no `boundary authenticate` step:
+
+```bash
+$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+EOT
+
+$ boundary connect ssh -target-id ttcp_873964g581
+...
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+To configure your provider to use the recovery KMS workflow, provide the KMS block as the value for
+`recovery_kms_hcl`:
+
+```hcl
+provider "boundary" {
+  addr             = 'https://boundary.mycorp.com:9200' 
+  recovery_kms_hcl = <<EOT
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+EOT
+}
+```
+
+</Tab>
+</Tabs>
+
+
+## Initialize the Database
+
+Before you can start Boundary, the database must be initialized. To do this, run:
+
+```
+$ boundary database init -h
+...
+```
+
+From this command, you can see the flags available to skip the creation of auto-generated resources. These
+resources are useful when running in development environments but in a non development environment may not
+be desired. You can think of them as Boundary's default username and password, and if used in non dev workflows
+should be overidden or skipped to avoid undermining Boundary's security model.
+
+To initialize the Boundary database without generated resources:
+
+```
+$ boundary database init \
+  -skip-auth-method-creation \
+  -skip-host-resources-creation \
+  -skip-scopes-creation \
+  -skip-target-creation \ 
+  -config /etc/boundary.hcl
+```
+
+When you start Boundary, you will effectively have a blank sheet to work against. From here, it's required that
+you use the KMS recovery workflow described above to create at a minimum an auth method, a user, an account, and a 
+role with sufficient grants. Otherwise, you need to continue to use the recovery workflow for management. Though 
+continuing with the recovery workflow is not discouraged it's important to realize that this is effectively a 
+global super user type of workflow and comes with security concerns. 
+
+## Creating Your First Login Account
+
+This section covers how to configure your first auth method, user, account, and role to login to Boundary without
+the recovery KMS workflow. In this example, we're going to make an admin user for the global and project level
+scopes we create. This will allow our user to configure targets within those scopes and manage them.
+
+#### Create Org and Project Scopes
+
+In this example, we're going to create an org and project scope and skip creating an administrator and admin role 
+for each scope. We're going to specify a role for managing these scopes by selected users in a later step.
+
+<Tabs>
+<Tab heading="CLI">
+
+```bash
+$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+EOT
+
+$ boundary scopes create -name 'org' -scope-id 'global' \
+  -skip-admin-role-creation \
+  -skip-default-role-creation
+<truncated>
+
+$ boundary scopes create -name 'project' -scope-id <org_scope_id_from_last_step> \
+  -skip-admin-role-creation \
+  -skip-default-role-creation
+<truncated>
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_scope" "org" {
+  scope_id    = "global"
+  name        = "organization"
+  description = "Organization scope"
+
+  auto_create_admin_role   = false 
+  auto_create_default_role = false
+}
+
+resource "boundary_scope" "project" {
+  name                     = "project"
+  description              = "My first project"
+  scope_id                 = boundary_scope.org.id
+  auto_create_admin_role   = false 
+  auto_create_default_role = false
+}
+```
+
+</Tab>
+</Tabs>
+
+
+
+#### Create an Auth Method
+
+Create an auth method in the organization scope.
+
+<Tabs>
+<Tab heading="CLI">
+
+```bash
+$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+EOT
+
+$ boundary auth-methods create password -scope-id <org_scope_id> -name 'my_method' -description 'My password auth method'
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_auth_method" "password" {
+  name        = "my_password_auth_method"
+  description = "Password auth method"
+  type        = "password"
+  scope_id    = boundary_scope.org.id
+}
+```
+
+</Tab>
+</Tabs>
+
+#### Create a Login Account
+
+Create a login account for the auth method.
+
+<Tabs>
+<Tab heading="CLI">
+
+```bash
+$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+EOT
+
+$ boundary accounts create password \
+  -login-name "myuser" \
+  -password "foofoofoo" \
+  -auth-method-id <auth_method_id_from_last_step"
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_account" "myuser" {
+  name           = "myuser"
+  description    = "User account for my user"
+  type           = "password"
+  login_name     = "myuser" 
+  password       = "foofoofoo"
+  auth_method_id = boundary_auth_method.password.id
+}
+```
+
+</Tab>
+</Tabs>
+
+#### Create a User
+
+Create a user and associate the user with the login account created in the previous step.
+This user will also be the principal in the role we create in the following step.
+
+<Tabs>
+<Tab heading="CLI">
+
+```bash
+$ export BOUNDARY_RECOVERY_CONFIG=<<EOT
+kms "aead" {
+	purpose   = "recovery"
+	aead_type = "aes-gcm"
+	key       = "8fZBjCUfN0TzjEGLQldGY4+iE9AkOvCfjh7+p0GtRBQ="
+	key_id    = "global_recovery"
+}
+EOT
+
+$ boundary users create -scope-id <org_scope_id> \
+  -name "myuser" \
+  -description "My user!"
+
+$ boundary users add-accounts -id <myuser_user_id> -account <myuser_account_id>
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_user" "myuser" {
+  name        = "myuser"
+  description = "My user!"
+  account_ids = [boundary_account.myuser.id]
+  scope_id    = boundary_scope.org.id
+}
+```
+
+</Tab>
+</Tabs>
+
+
+#### Create Roles to Manage Scopes
+
+The follow example creates 4 roles:
+1. To allow anonymouns (unauthenticated) users the ability to list scopes and auth methods in the global scope.
+1. To allow anonymouns (unauthenticated) users the ability to list scopes and auth methods in the orgnaization scope.
+1. To allow `myuser` user administration grants at the org scope.
+1. To allow `myuser` user administration grants at the project scope.
+
+1. Create anonymous listing role for global scope
+
+<Tabs>
+<Tab heading="CLI">
+
+Assumes recovery key export from above steps is still set:
+
+```bash
+# Create global anonymous listing role
+$ boundary roles create -name 'global_anon_listing' \
+  -scope-id 'global'
+
+$ boundary add-grants -id <global_anon_listing_id> \
+  -grant 'id=*;type=auth-method;actions=list,authenticate'
+
+$ boundary add-grants -id <global_anon_listing_id> \
+  -grant 'type=scope;actions=list'
+
+$ boundary add-grants -id <global_anon_listing_id> \
+  -grant 'id=*;actions=read,change-password'
+
+$ boundary add-principals -id <global_anon_listing_id> \
+  -principal 'u_anon' 
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_role" "global_anon_listing" {
+  scope_id = "global"
+  grant_strings = [
+    "id=*;type=auth-method;actions=list,authenticate",
+    "type=scope;actions=list",
+    "id=*;actions=read,change-password"
+  ]
+  principal_ids = ["u_anon"]
+}
+```
+
+</Tab>
+</Tabs>
+
+2. Create anonymous listing role for org scope
+
+<Tabs>
+<Tab heading="CLI">
+
+Assumes recovery key export from above steps is still set:
+
+```bash
+$ boundary roles create -name 'global_anon_listing' \
+  -scope-id <org_scope_id> 
+
+$ boundary add-grants -id <global_anon_listing_id> \
+  -grant 'id=*;type=auth-method;actions=list,authenticate'
+
+$ boundary add-grants -id <global_anon_listing_id> \
+  -grant 'type=scope;actions=list'
+
+$ boundary add-grants -id <global_anon_listing_id> \
+  -grant 'id=*;actions=read,change-password'
+
+$ boundary add-principals -id <global_anon_listing_id> \
+  -principal 'u_anon' 
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_role" "org_anon_listing" {
+  scope_id = boundary_scope.org.id
+  grant_strings = [
+    "id=*;type=auth-method;actions=list,authenticate",
+    "type=scope;actions=list",
+    "id={{account.id}};actions=read,change-password"
+  ]
+  principal_ids = ["u_anon"]
+}
+```
+</Tab>
+</Tabs>
+
+
+3. Create org admin role for myuser
+
+<Tabs>
+<Tab heading="CLI">
+
+Assumes recovery key export from above steps is still set:
+
+```bash
+$ boundary roles create -name 'org_admin' \
+  -scope-id 'global' \
+  -grant-scope-id <org_scope_id>
+
+$ boundary add-grants -id <org_admin_id> \
+  -grant 'id=*;type=*;actions=*'
+
+$ boundary add-principals -id <org_admin_id> \
+  -principal <myuser_user_id> 
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_role" "org_admin" {
+  scope_id       = "global" 
+  grant_scope_id = boundary_scope.org.id
+  grant_strings = [
+    "id=*;type=*;actions=*"
+  ]
+  principal_ids = [boundary_user.myuser.id]
+}
+```
+</Tab>
+</Tabs>
+
+
+4. Create project admin for myuser
+
+<Tabs>
+<Tab heading="CLI">
+
+Assumes recovery key export from above steps is still set:
+
+```bash
+$ boundary roles create -name 'project_admin' \
+  -scope-id <org_scope_id> \
+  -grant-scope-id <project_scope_id>
+
+$ boundary add-grants -id <project_admin_id> \
+  -grant 'id=*;type=*;actions=*'
+
+$ boundary add-principals -id <project_admin_id> \
+  -principal <myuser_user_id> 
+```
+
+</Tab>
+<Tab heading="Terraform">
+
+```hcl
+resource "boundary_role" "project_admin" {
+  scope_id       = boundary_scope.org.id
+  grant_scope_id = boundary_scope.project.id
+  grant_strings = [
+    "id=*;type=*;actions=*"
+  ]
+  principal_ids = [boundary_user.myuser.id]
+}
+```
+
+</Tab>
+</Tabs>
+
+
+#### Login as Your New User
+
+```bash
+boundary authenticate password \
+  -auth-method-id <auth_method_id> \
+  -login-name myuser
+  -password foofoofoo
+```
