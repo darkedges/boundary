@@ -108,10 +108,7 @@ $ boundary database init -h
 ...
 ```
 
-From this command, you can see the flags available to skip the creation of auto-generated resources. These
-resources are useful when running in development environments but in a non development environment may not
-be desired. You can think of them as Boundary's default username and password, and if used in non dev workflows
-should be overidden or skipped to avoid undermining Boundary's security model.
+From this command, you can see the flags available to skip the creation of auto-generated resources. 
 
 To initialize the Boundary database without generated resources:
 
@@ -276,7 +273,12 @@ resource "boundary_user" "myuser" {
 
 #### Create Roles to Manage Scopes
 
-The follow example creates 4 roles:
+The follow describes the four baseline roles you'll need to create to manage resources within the org and project 
+scopes created above. These roles are similar to the roles created for you in dev mode but declaring them explicitly
+allows you to manage them independently and fully within Terraform or on the CLI. This is useful if you want to lock 
+them down more or have control over them in a declarative way.
+
+The following example creates 4 roles:
 1. To allow anonymouns (unauthenticated) users the ability to list scopes and auth methods in the global scope.
 1. To allow anonymouns (unauthenticated) users the ability to list scopes and auth methods in the orgnaization scope.
 1. To allow `myuser` user administration grants at the org scope.
@@ -297,14 +299,8 @@ $ boundary roles create -name 'global_anon_listing' \
 
 $ boundary add-grants -id <global_anon_listing_id> \
   -recovery-config /tmp/recovery.hcl \
-  -grant 'id=*;type=auth-method;actions=list,authenticate'
-
-$ boundary add-grants -id <global_anon_listing_id> \
-  -recovery-config /tmp/recovery.hcl \
-  -grant 'type=scope;actions=list'
-
-$ boundary add-grants -id <global_anon_listing_id> \
-  -recovery-config /tmp/recovery.hcl \
+  -grant 'id=*;type=auth-method;actions=list,authenticate' \
+  -grant 'type=scope;actions=list' \
   -grant 'id=*;actions=read,change-password'
 
 $ boundary add-principals -id <global_anon_listing_id> \
@@ -344,14 +340,8 @@ $ boundary roles create -name 'global_anon_listing' \
 
 $ boundary add-grants -id <global_anon_listing_id> \
   -recovery-config /tmp/recovery.hcl \
-  -grant 'id=*;type=auth-method;actions=list,authenticate'
-
-$ boundary add-grants -id <global_anon_listing_id> \
-  -recovery-config /tmp/recovery.hcl \
-  -grant 'type=scope;actions=list'
-
-$ boundary add-grants -id <global_anon_listing_id> \
-  -recovery-config /tmp/recovery.hcl \
+  -grant 'id=*;type=auth-method;actions=list,authenticate' \
+  -grant 'type=scope;actions=list' \
   -grant 'id=*;actions=read,change-password'
 
 $ boundary add-principals -id <global_anon_listing_id> \
