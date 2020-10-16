@@ -116,12 +116,7 @@ should be overidden or skipped to avoid undermining Boundary's security model.
 To initialize the Boundary database without generated resources:
 
 ```
-$ boundary database init \
-  -skip-auth-method-creation \
-  -skip-host-resources-creation \
-  -skip-scopes-creation \
-  -skip-target-creation \ 
-  -config /etc/boundary.hcl
+$ boundary database init -skip-initial-login-role -config /etc/boundary.hcl
 ```
 
 When you start Boundary, you will effectively have a blank sheet to work against. From here, it's required that
