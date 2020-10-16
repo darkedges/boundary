@@ -124,7 +124,7 @@ $ boundary database init \
   -config /etc/boundary.hcl
 ```
 
-When you start Boundary, you will effectively have a blank sheet to work against. From here, it's required that
+When you start Boundary, you will effectively have a blank sheet to work against. The initial migrations in the database have been run (note that this includes creating special users like `u_anon` and the `global` scope) and the internal keyrings have been initialized.. From here, it's required that
 you use the KMS recovery workflow described above to create at a minimum an auth method, a user, an account, and a 
 role with sufficient grants. Otherwise, you need to continue to use the recovery workflow for management. Though 
 continuing with the recovery workflow is not discouraged it's important to realize that this is effectively a 
